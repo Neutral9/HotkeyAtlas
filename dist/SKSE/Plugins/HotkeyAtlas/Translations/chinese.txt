@@ -335,3 +335,10 @@ A single key or mouse button: {0} doesn't support combos, Shift / Ctrl / Alt, th
 {0} has no key for this yet. Set one in its own settings menu (MCM, dMenu); after that it can be changed here too. = {0} 尚未為此設定按鍵。請先在它自己的設定選單（MCM、dMenu）中設定，之後也可以在這裡更改。
 ENB keys can't be changed here. Change them in ENB's own menu or in enblocal.ini ([INPUT]) in the game folder. = 無法在這裡更改 ENB 的按鍵。請在 ENB 自己的選單中，或在遊戲資料夾的 enblocal.ini（[INPUT]）中更改。
 {0} reads the keyboard itself, not through the game, so Hotkey Atlas can't move its keys. Change them in its own settings: {1}. = {0} 自行讀取鍵盤，而非透過遊戲，因此 Hotkey Atlas 無法移動它的按鍵。請在它自己的設定中更改：{1}。
+Button taken = 按鈕已被佔用
+{0} in {1} is already used by: {2}. = {0} 在 {1} 中已被使用於：{2}。
+In one context the game runs only one action per button, the other would stop working. = 在同一情境中，遊戲每個按鈕只會執行一個動作，另一個將失效。
+Swap: {0} goes on {1}, {2} goes on {3}. = 交換：{0} 改用 {1}，{2} 改用 {3}。
+{0} can't go on {1}, so the buttons can't be swapped. = {0} 無法改用 {1}，因此無法交換按鈕。
+Swap = 交換
+Swapped: {0} and {1} traded buttons in {2}. = 已交換：{0} 與 {1} 在 {2} 中互換了按鈕。

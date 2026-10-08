@@ -335,3 +335,10 @@ A single key or mouse button: {0} doesn't support combos, Shift / Ctrl / Alt, th
 {0} has no key for this yet. Set one in its own settings menu (MCM, dMenu); after that it can be changed here too. = {0} nie ma jeszcze klawisza do tego. Ustaw go w jego własnym menu ustawień (MCM, dMenu); potem można go zmieniać także tutaj.
 ENB keys can't be changed here. Change them in ENB's own menu or in enblocal.ini ([INPUT]) in the game folder. = Klawiszy ENB nie można tu zmienić. Zmień je we własnym menu ENB lub w pliku enblocal.ini ([INPUT]) w folderze gry.
 {0} reads the keyboard itself, not through the game, so Hotkey Atlas can't move its keys. Change them in its own settings: {1}. = {0} sam odczytuje klawiaturę, z pominięciem gry, więc Hotkey Atlas nie może przenieść jego klawiszy. Zmień je w jego własnych ustawieniach: {1}.
+Button taken = Przycisk zajęty
+{0} in {1} is already used by: {2}. = {0} w {1} jest już używany przez: {2}.
+In one context the game runs only one action per button, the other would stop working. = W jednym kontekście gra wykonuje tylko jedną akcję na przycisk, druga przestałaby działać.
+Swap: {0} goes on {1}, {2} goes on {3}. = Zamień: {0} trafi na {1}, {2} trafi na {3}.
+{0} can't go on {1}, so the buttons can't be swapped. = {0} nie może trafić na {1}, więc przycisków nie da się zamienić.
+Swap = Zamień
+Swapped: {0} and {1} traded buttons in {2}. = Zamieniono: {0} i {1} wymieniły się przyciskami w {2}.

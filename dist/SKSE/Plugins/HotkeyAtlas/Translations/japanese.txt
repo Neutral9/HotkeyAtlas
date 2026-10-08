@@ -335,3 +335,10 @@ A single key or mouse button: {0} doesn't support combos, Shift / Ctrl / Alt, th
 {0} has no key for this yet. Set one in its own settings menu (MCM, dMenu); after that it can be changed here too. = {0} にはまだこの操作のキーがありません。まずその MOD 自身の設定メニュー (MCM、dMenu) で設定してください。その後はここでも変更できます。
 ENB keys can't be changed here. Change them in ENB's own menu or in enblocal.ini ([INPUT]) in the game folder. = ENB のキーはここでは変更できません。ENB 自身のメニュー、またはゲームフォルダーの enblocal.ini ([INPUT]) で変更してください。
 {0} reads the keyboard itself, not through the game, so Hotkey Atlas can't move its keys. Change them in its own settings: {1}. = {0} はゲームを通さずに自分でキーボードを読み取るため、Hotkey Atlas はキーを移動できません。その MOD 自身の設定で変更してください: {1}。
+Button taken = ボタンは使用中です
+{0} in {1} is already used by: {2}. = {1} の {0} はすでに次で使われています：{2}。
+In one context the game runs only one action per button, the other would stop working. = 同じコンテキストでは、ゲームは1つのボタンにつき1つの操作しか実行しません。もう一方は動作しなくなります。
+Swap: {0} goes on {1}, {2} goes on {3}. = 入れ替え：{0} は {1} に、{2} は {3} になります。
+{0} can't go on {1}, so the buttons can't be swapped. = {0} は {1} に割り当てられないため、ボタンを入れ替えられません。
+Swap = 入れ替え
+Swapped: {0} and {1} traded buttons in {2}. = 入れ替えました：{2} で {0} と {1} のボタンを交換しました。
