@@ -18,7 +18,99 @@ namespace HA
         }).detach();
     }
 
-    void Rebind(const Binding& binding, std::uint32_t newCombo)
+    namespace
+    {
+        // Whether Skyrim control `b` may go on `code` at all (see Rebind).
+        bool ControlTakes(const Binding& b, std::uint32_t code)
+        {
+            if (!b.editable && !(b.overridden && code == b.defaultKey)) return false;
+            const auto home = CodeDevice(b.defaultKey);
+            if (code == kUnbound) return true;
+            if (CodeDevice(code) != home && !(home == Device::Keyboard && CodeDevice(code) == Device::Mouse)) return false;
+            if (IsStick(b.defaultKey) && (!IsStick(BaseCode(code)) || HoldOf(code))) return false;
+            if (TriggerOf(code) != Trigger::Press && (IsStick(BaseCode(code)) || IsWheel(BaseCode(code)))) return false;
+            if (const auto h = HoldOf(code); h && (CodeDevice(h) == Device::Gamepad) != (CodeDevice(code) == Device::Gamepad)) return false;
+            return PhysicalKey(code, home, b.defaultKey) != 0xFF || InputHookInstalled();
+        }
+
+        // Game thread: puts Skyrim control `b` on `newCombo` in the control map and records the
+        // change. `conflicts`: other events left on the same key. False: its mapping is gone.
+        bool MoveControl(const Binding& b, std::uint32_t newCombo, std::string* conflicts)
+        {
+            const auto home   = CodeDevice(b.defaultKey);
+            const auto newKey = PhysicalKey(newCombo, home, b.defaultKey);  // 0xFF: combo, unbound, moved to the mouse or a stick
+            auto*      cm     = RE::ControlMap::GetSingleton();
+            auto*      maps   = cm && b.ctx >= 0 && b.ctx < ContextCount() ? DeviceMappings(cm, b.ctx, home) : nullptr;
+            if (!maps) return false;
+
+            // find by event + current key; indices shift whenever the array is re-sorted
+            RE::ControlMap::UserEventMapping* target = nullptr;
+            for (auto& m : *maps) {
+                const char* name = m.eventID.c_str();
+                if (!name || !*name) continue;
+                if (!target && b.action == name && m.inputKey == PhysicalKey(CurrentCode(b), home, b.defaultKey))
+                    target = &m;
+                else if (conflicts && newKey != 0xFF && m.inputKey == newKey)
+                    *conflicts += (conflicts->empty() ? "" : ", ") + std::string(name);
+            }
+            if (!target) return false;
+
+            {
+                std::lock_guard l(g_ovLock);
+                RecordChange(g_overrides, OverrideId(b.ctx, b.action, b.defaultKey), b.defaultKey, newCombo);
+                RebuildComboTableLocked();
+            }
+            logger::info("rebind: ctx {} '{}' device {} key 0x{:X} -> 0x{:X} (code 0x{:X}, default 0x{:X})", b.ctx, b.action,
+                static_cast<int>(home), target->inputKey, newKey, newCombo, b.defaultKey);
+            target->inputKey = newKey;
+            SortByKey(*maps);  // without this the game's key lookup can't find the new key
+            return true;
+        }
+
+        std::mutex                 g_swapLock;
+        std::optional<SwapRequest> g_swapAsk;  // a rebind waiting for the user's answer
+    }
+
+    // Other Skyrim controls of the same context that `newCombo` would put `b` on top of: the game
+    // finds one event per key there, so one of them would stop working.
+    std::vector<Binding> ControlsOnKey(const Binding& b, std::uint32_t newCombo)
+    {
+        std::vector<Binding> out;
+        if (b.kind != Kind::ControlMap || newCombo == kUnbound) return out;
+        const auto home   = CodeDevice(b.defaultKey);
+        const auto newKey = PhysicalKey(newCombo, home, b.defaultKey);
+        if (newKey == 0xFF) return out;  // fired by the input hook, not looked up by the game
+        const auto model = GetModel();
+        for (const auto& t : model->all)
+            if (t.kind == Kind::ControlMap && t.ctx == b.ctx && CodeDevice(t.defaultKey) == home && t.action != b.action &&
+                t.key != kUnbound && PhysicalKey(CurrentCode(t), home, t.defaultKey) == newKey)
+                out.push_back(t);
+        return out;
+    }
+
+    std::optional<SwapRequest> PendingSwap()
+    {
+        std::lock_guard l(g_swapLock);
+        return g_swapAsk;
+    }
+
+    void AnswerSwap(bool swap)
+    {
+        std::optional<SwapRequest> ask;
+        {
+            std::lock_guard l(g_swapLock);
+            ask = std::exchange(g_swapAsk, std::nullopt);
+        }
+        if (ask && swap) Rebind(ask->binding, ask->code, true);
+    }
+
+    bool CanSwap(const SwapRequest& r)
+    {
+        const auto old = CurrentCode(r.binding);
+        return std::ranges::all_of(r.taken, [&](const Binding& t) { return ControlTakes(t, old); });
+    }
+
+    void Rebind(const Binding& binding, std::uint32_t newCombo, bool swap)
     {
         if (newCombo == CurrentCode(binding)) return;
         if (!binding.editable && !(binding.overridden && newCombo == binding.defaultKey)) return;  // read-only: Reset only
@@ -65,37 +157,40 @@ namespace HA
                 SetStatus(TL("Combos for Skyrim controls need the input hook, which failed to install (see HotkeyAtlas.log)."));
                 return;
             }
-            SKSE::GetTaskInterface()->AddTask([b = binding, newCombo, home] {
-                const auto newKey = PhysicalKey(newCombo, home, b.defaultKey);  // 0xFF: combo, unbound, moved to the mouse or a stick
-                auto*      cm     = RE::ControlMap::GetSingleton();
-                auto*      maps   = cm && b.ctx >= 0 && b.ctx < ContextCount() ? DeviceMappings(cm, b.ctx, home) : nullptr;
-
-                // find by event + current key; indices shift whenever the array is re-sorted
-                RE::ControlMap::UserEventMapping* target = nullptr;
-                std::string                       conflicts;
-                if (maps) {
-                    for (auto& m : *maps) {
-                        const char* name = m.eventID.c_str();
-                        if (!name || !*name) continue;
-                        if (!target && b.action == name && m.inputKey == PhysicalKey(CurrentCode(b), home, b.defaultKey))
-                            target = &m;
-                        else if (newKey != 0xFF && m.inputKey == newKey)
-                            conflicts += (conflicts.empty() ? "" : ", ") + std::string(name);
+            // the key is taken in this context: the user picks between swapping and cancelling
+            auto taken = ControlsOnKey(binding, newCombo);
+            if (!taken.empty() && !swap) {
+                std::lock_guard l(g_swapLock);
+                g_swapAsk = SwapRequest{ binding, newCombo, std::move(taken) };
+                return;
+            }
+            if (!taken.empty()) {
+                // they get the key `binding` leaves; it goes on theirs. One task: the control map
+                // never holds a half-done swap
+                const auto old = CurrentCode(binding);
+                SKSE::GetTaskInterface()->AddTask([b = binding, newCombo, old, taken = std::move(taken)] {
+                    bool ok = true;
+                    for (const auto& t : taken) ok &= MoveControl(t, old, nullptr);
+                    ok &= MoveControl(b, newCombo, nullptr);
+                    if (!ok) {
+                        SetStatus(TL("Rebind failed: the control map changed, rescan and try again."));
+                        Rescan();
+                        return;
                     }
-                }
-                if (!target) {
+                    std::string names;
+                    for (const auto& t : taken) names += (names.empty() ? "" : ", ") + t.action;
+                    SaveConfigAsync(TLF("Swapped: {0} and {1} traded buttons in {2}.", { b.action, names, b.context }));
+                });
+                return;
+            }
+            SKSE::GetTaskInterface()->AddTask([b = binding, newCombo, home] {
+                std::string conflicts;
+                if (!MoveControl(b, newCombo, &conflicts)) {
                     SetStatus(TL("Rebind failed: the control map changed, rescan and try again."));
                     Rescan();
                     return;
                 }
-
-                {
-                    std::lock_guard l(g_ovLock);
-                    RecordChange(g_overrides, OverrideId(b.ctx, b.action, b.defaultKey), b.defaultKey, newCombo);
-                    RebuildComboTableLocked();
-                }
-                target->inputKey = newKey;
-                SortByKey(*maps);  // without this the game's key lookup can't find the new key
+                auto* cm = RE::ControlMap::GetSingleton();
 
                 std::string msg;  // silent on success, only a key conflict is worth a message
                 if (!conflicts.empty())

@@ -187,6 +187,9 @@ namespace HA
         fs::path    file;
         std::string iniKey;  // ini / yaml: setting name; json: full path, e.g. "Menu.ToggleKey"
         int         line = -1;
+        // dlls that read this mod key from the game's input: a remap is shown to them only, other
+        // mods keep seeing the real keys. Empty = not known: the remap is shown to every reader.
+        std::vector<fs::path> readers;
 
         // modifier storage (Kind::Ini / Kind::Json)
         ModStyle modStyle = ModStyle::None;
@@ -245,7 +248,21 @@ namespace HA
     std::shared_ptr<const Model> GetModel();
     bool                         IsBusy();
     std::string                  GetStatus();
-    void                         Rebind(const Binding& binding, std::uint32_t newCombo);
+    // swap: the Skyrim controls already on that key in the same context get the key `binding`
+    // leaves. Without it such a rebind waits for the user's answer (see PendingSwap).
+    void                         Rebind(const Binding& binding, std::uint32_t newCombo, bool swap = false);
+
+    // A Skyrim control put on a key another control of the same context already has.
+    struct SwapRequest
+    {
+        Binding               binding;
+        std::uint32_t         code = kUnbound;
+        std::vector<Binding> taken;  // the controls on that key now
+    };
+    std::vector<Binding>       ControlsOnKey(const Binding& b, std::uint32_t newCombo);
+    std::optional<SwapRequest> PendingSwap();
+    bool                       CanSwap(const SwapRequest& r);  // the others can all take the key it leaves
+    void                       AnswerSwap(bool swap);          // false: the rebind is dropped
     void                         BindGamepad(const Binding& binding, std::uint32_t padCode);  // kUnbound removes it
     void                         ResetAll(std::optional<Device> only = std::nullopt);  // only: that device's changes
 

@@ -303,8 +303,48 @@ namespace HA::UI
     // itself; held while another is pressed, the two make a combo (keyboard and mouse
     // together, the gamepad on its own). A gamepad button pressed for a key or mouse action
     // is added to it.
+    namespace
+    {
+        // A rebind onto a key another Skyrim control of the same context has: swap or cancel.
+        void SwapPrompt()
+        {
+            const auto ask = PendingSwap();
+            if (!ask) return;
+            constexpr const char* kPopup = "###swapask";
+            const auto            title  = std::string(TL("Button taken")) + kPopup;
+            if (!ImGui::IsPopupOpen(kPopup)) ImGui::OpenPopup(title.c_str());
+            if (const auto* vp = ImGui::GetMainViewport())
+                ImGui::SetNextWindowPos({ vp->Pos.x + vp->Size.x * 0.5f, vp->Pos.y + vp->Size.y * 0.5f }, ImGui::ImGuiCond_Appearing, { 0.5f, 0.5f });
+            if (!ImGui::BeginPopupModal(title.c_str(), nullptr, ImGui::ImGuiWindowFlags_AlwaysAutoResize)) return;
+
+            std::string names;
+            for (const auto& t : ask->taken) names += (names.empty() ? "" : ", ") + t.action;
+            ImGui::TextUnformatted(TLF("{0} in {1} is already used by: {2}.", { CodeLabel(ask->code), ask->binding.context, names }).c_str());
+            Muted(TL("In one context the game runs only one action per button, the other would stop working."));
+            const bool can = CanSwap(*ask);
+            if (can)
+                ImGui::TextUnformatted(TLF("Swap: {0} goes on {1}, {2} goes on {3}.",
+                    { ask->binding.action, CodeLabel(ask->code), names, CodeLabel(CurrentCode(ask->binding)) }).c_str());
+            else
+                Muted(TLF("{0} can't go on {1}, so the buttons can't be swapped.", { names, CodeLabel(CurrentCode(ask->binding)) }).c_str());
+            ImGui::Spacing();
+
+            if (can && ImGui::Button(Id(TL("Swap"), "swapyes").c_str())) {
+                AnswerSwap(true);
+                ImGui::CloseCurrentPopup();
+            }
+            if (can) ImGui::SameLine();
+            if (ImGui::Button(Id(TL("Cancel"), "swapno").c_str())) {
+                AnswerSwap(false);
+                ImGui::CloseCurrentPopup();
+            }
+            ImGui::EndPopup();
+        }
+    }
+
     void HandleCapture()
     {
+        SwapPrompt();
         SyncMenuHotkey();
         if (!g_capture) {
             ClearPending();

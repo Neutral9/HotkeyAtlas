@@ -400,7 +400,7 @@ namespace HA
                     if (const auto* global = form->As<RE::TESGlobal>()) m.globals[name] = static_cast<int>(global->value);
             } else if (v.IsLiteralArray()) {
                 const auto arr = v.GetArray();
-                if (!arr || arr->empty()) return;
+                if (!arr || arr->size() == 0) return;  // not empty(): CommonLib's returns size() > 0
                 if ((*arr)[0].IsInt()) {
                     auto& out = m.intArrays[name];
                     for (const auto& e : *arr) out.push_back(e.IsInt() ? e.GetSInt() : -1);

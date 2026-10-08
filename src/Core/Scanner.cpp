@@ -118,6 +118,44 @@ namespace HA
             std::vector<std::string> dlls, plugins;
             std::vector<fs::path>    dllPaths;      // same order as dlls
             std::set<std::string>    pluginsExact;  // lower case, with extension
+            fs::path                 skse;          // skse64_1_x_y.dll
+
+            // The loaded dll installed in the same mod manager folder as `file` (MO2: mods\<Mod>\...),
+            // for configs named unlike their dll (SKSE/Plugins/IED/... of ImmersiveEquipmentDisplays.dll).
+            std::optional<fs::path> DllInSameMod(const fs::path& file) const
+            {
+                // "...\mods\<Mod>\" in lower case, without the "\\?\" prefix; empty outside a mods folder
+                const auto root = [](const std::wstring& real) -> std::wstring {
+                    auto l = real.starts_with(L"\\\\?\\") ? real.substr(4) : real;
+                    std::ranges::transform(l, l.begin(), [](wchar_t c) { return static_cast<wchar_t>(std::towlower(c)); });
+                    const auto p   = l.find(L"\\mods\\");
+                    if (p == std::wstring::npos) return {};
+                    const auto end = l.find(L'\\', p + 6);
+                    return end == std::wstring::npos ? std::wstring() : l.substr(0, end + 1);
+                };
+                HANDLE h = CreateFileW(file.c_str(), 0, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, nullptr, OPEN_EXISTING,
+                    FILE_FLAG_BACKUP_SEMANTICS, nullptr);
+                if (h == INVALID_HANDLE_VALUE) return std::nullopt;
+                wchar_t    buf[MAX_PATH * 2];
+                const auto len = GetFinalPathNameByHandleW(h, buf, static_cast<DWORD>(std::size(buf)), FILE_NAME_NORMALIZED);
+                CloseHandle(h);
+                if (!len || len >= std::size(buf)) return std::nullopt;
+                const auto mod = root(std::wstring(buf, len));
+                if (mod.empty()) return std::nullopt;
+                for (const auto& dll : dllPaths)
+                    if (root(dll.wstring()) == mod) return dll;
+                return std::nullopt;
+            }
+
+            // Who reads the keys of a mod with Papyrus scripts: SKSE (RegisterForKey), plus the
+            // mod's own dll if it has one (its script may pass the key on to it).
+            std::vector<fs::path> PapyrusReaders(std::initializer_list<std::string_view> names) const
+            {
+                std::vector<fs::path> out;
+                if (!skse.empty()) out.push_back(skse);
+                if (const auto dll = DllFor(names)) out.push_back(*dll);
+                return out;
+            }
 
             bool Known() const { return !dlls.empty() && !plugins.empty(); }
 
@@ -187,6 +225,7 @@ namespace HA
                     const auto len = GetModuleFileNameW(mods[i], path, static_cast<DWORD>(std::size(path)));
                     if (!len) continue;
                     const fs::path p(std::wstring_view(path, len));
+                    if (Lower(Utf8(p.filename())).starts_with("skse64_1")) out.skse = p;  // its RegisterForKey serves Papyrus mods
                     // SKSE plugins only (under MO2 the real path is mods\<mod>\SKSE\Plugins\x.dll)
                     if (Lower(Utf8(p.parent_path())).find("skse\\plugins") == npos) continue;
                     out.dlls.push_back(Norm(Utf8(p.stem())));
@@ -827,6 +866,7 @@ namespace HA
 
                     std::set<std::string> seen;
                     keys.seen       = &seen;
+                    const auto from = out.size();
                     const auto user = data / "MCM/Settings" / (mod + ".ini");
                     if (fs::exists(user, e2)) {
                         ScanCounted(user, data, out, stats, false, &keys);
@@ -835,6 +875,10 @@ namespace HA
                     keys.onlyUnseen    = true;
                     const auto defaults = it->path() / "settings.ini";
                     if (fs::exists(defaults, e2)) ScanCounted(defaults, data, out, stats, false, &keys);
+                    // MCM Helper's own keybinds, or the mod's scripts / dll
+                    auto readers = loaded.PapyrusReaders({ mod });
+                    if (const auto helper = loaded.DllFor({ "MCMHelper" })) readers.push_back(*helper);
+                    for (auto i = from; i < out.size(); ++i) out[i].readers = readers;
                 } catch (...) {
                     stats.Add(0, true);  // broken config.json
                 }
@@ -881,6 +925,7 @@ namespace HA
                     map.owner = mod;
                     map.seen  = &seen;
                     for (const auto& k : keys) map.labels[McmKeyId(k.section, k.name)] = k.label;
+                    const auto from = out.size();
                     if (fs::exists(ini, e2)) ScanCounted(ini, data, out, stats, false, &map);
 
                     // never changed in dMenu, so not in the ini yet: the json's default key
@@ -907,6 +952,8 @@ namespace HA
                         MarkFileEdit(b);
                         out.push_back(std::move(b));
                     }
+                    if (const auto dll = loaded.DllFor({ mod }))
+                        for (auto i = from; i < out.size(); ++i) out[i].readers = { *dll };
                 } catch (...) {
                     stats.Add(0, true);  // broken json
                 }
@@ -1084,6 +1131,7 @@ namespace HA
                 b.editable    = true;
                 b.file        = file;
                 b.iniKey      = nth == 1 ? cols[0] : std::format("{} {}", cols[0], nth);
+                if (const auto dll = loaded.DllFor({ "ObjectManipulationOverhaul" })) b.readers = { *dll };
                 b.line        = n;
                 b.defaultKey  = CurrentCode(b);
                 MarkFileEdit(b);
@@ -1096,10 +1144,12 @@ namespace HA
         // Plain SkyUI menus: the keys their keymap options show live in script variables (saved
         // with the game), found through the menu's compiled script. Such mods listen with
         // RegisterForKey, which sees the game's input: remapped by the input hook.
-        void ScanPapyrusMcm(const fs::path& data, const std::vector<McmMenu>& menus, std::vector<Binding>& out, ScanStats& stats)
+        void ScanPapyrusMcm(const fs::path& data, const std::vector<McmMenu>& menus, std::vector<Binding>& out, ScanStats& stats,
+            const LoadedMods& loaded)
         {
             for (const auto& m : menus) {
-                const auto stem = fs::path(m.plugin).stem().string();
+                const auto stem    = fs::path(m.plugin).stem().string();
+                const auto readers = loaded.PapyrusReaders({ stem });
                 const auto tr   = stem.empty() ? std::unordered_map<std::string, std::string>{} : LoadTranslations(data, stem);
                 const auto text = [&](const std::string& s) {
                     if (!s.starts_with('$')) return s;
@@ -1135,6 +1185,7 @@ namespace HA
                             b.editable = b.key != kUnbound;
                             b.file     = data / "Scripts" / (script + ".pex");
                             b.iniKey   = index < 0 ? name : std::format("{}[{}]", name, index);
+                            b.readers  = readers;
                             b.defaultKey = CurrentCode(b);
                             MarkFileEdit(b);
                             out.push_back(std::move(b));
@@ -1177,7 +1228,7 @@ namespace HA
             const auto           dmenuIni   = ScanDMenu(data, out, stats, loaded);
             ScanEnb(out, stats);
             ScanOmo(data, out, stats, loaded);
-            ScanPapyrusMcm(data, menus, out, stats);
+            ScanPapyrusMcm(data, menus, out, stats, loaded);
             if (!loaded.Known())
                 logger::warn("scan: could not list the loaded mods, configs of switched-off mods may show");
             else
@@ -1264,7 +1315,21 @@ namespace HA
                     std::vector<Binding> got;
                     ScanCounted(it->path(), data, got, stats, ext == ".json");
                     if (!got.empty() && modOff(it->path(), sub)) continue;  // hotkeys of a switched-off mod
-                    if (!got.empty()) markOwnInput(it->path(), sub, got);
+                    if (!got.empty()) {
+                        markOwnInput(it->path(), sub, got);
+                        // the dll named like the file or its folder under SKSE/Plugins reads it
+                        const auto rel  = it->path().lexically_relative(data / sub);
+                        const auto top  = rel.empty() ? std::string() : Utf8(*rel.begin());
+                        const auto stem = Utf8(it->path().stem());
+                        std::vector<fs::path> readers;
+                        if (std::string_view(sub) == "MCM/Settings")
+                            readers = loaded.PapyrusReaders({ stem });
+                        else if (const auto dll = loaded.DllFor({ top, stem }))
+                            readers = { *dll };
+                        else if (const auto same = loaded.DllInSameMod(it->path()))
+                            readers = { *same };
+                        for (auto& b : got) b.readers = readers;
+                    }
                     out.insert(out.end(), std::make_move_iterator(got.begin()), std::make_move_iterator(got.end()));
                 }
             }
@@ -1314,6 +1379,19 @@ namespace HA
                 for (std::size_t k = 0; k < n; ++k)
                     if (std::find(keys, keys + k, keys[k]) == keys + k) model->byKey[keys[k]].push_back(i);
             }
+
+            {
+                // which dlls each remap is shown to; the hook's table is rebuilt on the game thread
+                std::map<std::string, std::vector<fs::path>> readers;
+                for (const auto& b : model->all)
+                    if (b.kind != Kind::ControlMap && !b.readers.empty()) readers[FileEditId(b)] = b.readers;
+                std::lock_guard l(g_ovLock);
+                SetRemapReadersLocked(std::move(readers));
+            }
+            SKSE::GetTaskInterface()->AddTask([] {
+                std::lock_guard l(g_ovLock);
+                RebuildComboTableLocked();
+            });
 
             std::lock_guard l(g_lock);
             g_model = std::move(model);

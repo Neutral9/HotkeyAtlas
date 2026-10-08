@@ -342,3 +342,10 @@ A single key or mouse button: {0} doesn't support combos, Shift / Ctrl / Alt, th
 {0} has no key for this yet. Set one in its own settings menu (MCM, dMenu); after that it can be changed here too. = У {0} для этого пока нет клавиши. Назначьте её в собственном меню настроек мода (MCM, dMenu), после этого её можно будет менять и здесь.
 ENB keys can't be changed here. Change them in ENB's own menu or in enblocal.ini ([INPUT]) in the game folder. = Клавиши ENB здесь не меняются. Измените их в собственном меню ENB или в файле enblocal.ini ([INPUT]) в папке игры.
 {0} reads the keyboard itself, not through the game, so Hotkey Atlas can't move its keys. Change them in its own settings: {1}. = {0} читает клавиатуру сам, в обход игры, поэтому Hotkey Atlas не может переназначить его клавиши. Измените их в его собственных настройках: {1}.
+Button taken = Кнопка занята
+{0} in {1} is already used by: {2}. = {0} в контексте {1} уже занята: {2}.
+In one context the game runs only one action per button, the other would stop working. = В одном контексте игра выполняет по кнопке только одно действие, второе перестанет работать.
+Swap: {0} goes on {1}, {2} goes on {3}. = Поменять местами: {0} встанет на {1}, {2} — на {3}.
+{0} can't go on {1}, so the buttons can't be swapped. = {0} нельзя поставить на {1}, поэтому поменять кнопки местами не получится.
+Swap = Поменять местами
+Swapped: {0} and {1} traded buttons in {2}. = Готово: {0} и {1} поменялись кнопками в контексте {2}.

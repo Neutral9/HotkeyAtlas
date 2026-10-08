@@ -247,6 +247,8 @@ namespace HA
     // ---------------------------------------------------------------- input hook (InputHook.cpp)
 
     void RebuildComboTableLocked();  // caller holds g_ovLock
+    // FileEditId() -> dlls reading that mod key (Binding::readers), from the latest scan. Caller holds g_ovLock.
+    void SetRemapReadersLocked(std::map<std::string, std::vector<fs::path>> readers);
     void ClearActiveInputs();        // game thread
     void PauseTriggers(bool paused);  // a bind is being captured: no new double taps / holds, gamepad buttons reach no one; any thread
 
